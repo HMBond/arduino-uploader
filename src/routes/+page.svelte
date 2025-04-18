@@ -1,10 +1,9 @@
 <script lang="ts">
-  // import { invoke } from "@tauri-apps/api/core";
   import { Command } from "@tauri-apps/plugin-shell";
   import { onMount } from "svelte";
   import Logo from "../components/Logo.svelte";
   import exampleCode from "../exampleCode.ino?raw";
-  import { appLocalDataDir, BaseDirectory } from "@tauri-apps/api/path";
+  import * as path from "@tauri-apps/api/path";
   import { create, mkdir } from "@tauri-apps/plugin-fs";
 
   let code = $state(exampleCode);
@@ -14,25 +13,16 @@
 
   onMount(async () => {
     loading = true;
-    // await invoke<string>("mount", { name: code })
-    //   .then((result) => {
-    //     boardList = getBoards(result);
-    //     error = "";
-    //   })
-    //   .catch(setError);
     const { stdout, stderr } = await arduinoCli(["board", "list", "--json"]);
     if (stderr) {
-      console.error(stderr);
       boardList = [];
-      error = `Could not get the lists of compatible boards.
-                Did you install arduino-cli?\n\n
-                How to install arduino-cli: https://arduino.github.io/arduino-cli/0.22/installation/`;
+      error = `Could not get the lists of compatible boards. Did you install arduino-cli?\n\n
+                How to install arduino-cli: https://arduino.github.io/arduino-cli/0.22/installation/\n\n\i${stderr}`;
     } else {
       boardList = getBoards(stdout);
       error = "";
     }
     loading = false;
-    error = await appLocalDataDir();
   });
 
   async function upload(event: SubmitEvent) {
@@ -40,49 +30,50 @@
     const formData = new FormData(event.target as HTMLFormElement);
     const index = parseInt(formData.get("board")?.toString() || "");
     const board = boardList.at(index)!;
-    const appDataPath = await appLocalDataDir();
-    const path = `${appDataPath}/TemporarySketch`;
-    console.log(path);
+    const sketchDir = await path.join(await path.tempDir(), "/TemporarySketch");
+
     const filename = "TemporarySketch.ino";
 
     loading = true;
 
-    await makeSketch(path, filename);
+    await makeSketch(sketchDir, filename);
 
-    error = await compileSketch(board, path);
+    error = await compileSketch(board, sketchDir);
 
     if (!error) {
-      error = await uploadSketch(board, path);
+      error = await uploadSketch(board, sketchDir);
     }
 
     loading = false;
   }
 
-  const makeSketch = async (path: string, filename: string) => {
-    await mkdir("TemporarySketch", { baseDir: BaseDirectory.AppLocalData });
-    const file = await create(`TemporarySketch/${filename}`, {
-      baseDir: BaseDirectory.AppLocalData,
+  const makeSketch = async (sketchDir: string, filename: string) => {
+    await mkdir(sketchDir).catch((error) => {
+      return error;
     });
-    await file.write(new TextEncoder().encode("Hello world"));
+    const file = await create(await path.join(sketchDir, filename));
+    await file.write(new TextEncoder().encode(code)).catch((err) => {
+      return err;
+    });
     await file.close();
   };
 
-  const compileSketch = async (board: Board, path: string) => {
+  const compileSketch = async (board: Board, sketchDir: string) => {
     const { stderr } = await arduinoCli([
       "compile",
       "-b",
       board.matching_boards[0].fqbn,
-      path,
+      sketchDir,
       "--export-binaries",
     ]);
 
     return stderr ? `Could not compile your code...\n\n ${stderr}` : "";
   };
 
-  const uploadSketch = async (board: Board, path: string) => {
+  const uploadSketch = async (board: Board, sketchDir: string) => {
     const { stderr, code } = await arduinoCli([
       "upload",
-      path,
+      sketchDir,
       "-p",
       board.port.address,
     ]);
@@ -111,20 +102,15 @@
   <Logo {loading} />
   <form onsubmit={upload}>
     <label for="board">
-      Select your Arduino board:
-      <select
-        id="board"
-        name="board"
-        disabled={boardList.length === 0}
-        required
-      >
+      Select your hardware:
+      <select id="board" name="board" required>
         {#each boardList as board, index}
           <option value={index}>
             {board.port.protocol_label} -
             {board.matching_boards.map((b) => b.name).join(" & ")}
           </option>
         {:else}
-          <option>Please connect a board...</option>
+          <option>No boards connected...</option>
         {/each}
       </select>
     </label>
