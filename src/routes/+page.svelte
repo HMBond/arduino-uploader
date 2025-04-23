@@ -5,125 +5,53 @@
   import exampleCode from "../exampleCode.ino?raw";
   import * as path from "@tauri-apps/api/path";
   import { create, mkdir, remove } from "@tauri-apps/plugin-fs";
-  import { tryAsync, appState } from "../lib/shared.svelte";
+  import {
+    getBoards,
+    makeSketch,
+    compileSketch,
+    uploadSketch,
+    parseError,
+  } from "../lib/utils.svelte";
 
   let code = $state(exampleCode);
   let boardList = $state<BoardList>([]);
-  let showFullError = $state(false);
+  let error = $state<Error | null>(null);
+  let loading = $state(false);
+  let uploading = $state(false);
 
   onMount(async () => {
-    await tryAsync(async () => {
-      boardList = await getBoards();
+    error = null;
+    loading = true;
+    boardList = await getBoards().catch((err) => {
+      error = parseError(err);
+      return [];
     });
+    loading = false;
   });
 
   async function upload(event: SubmitEvent) {
     event.preventDefault();
-    if (appState.loading) {
-      return;
-    }
     const formData = new FormData(event.target as HTMLFormElement);
     const index = parseInt(formData.get("board-index")?.toString() || "");
     const board = boardList.at(index)!;
     const sketchDir = await path.join(await path.tempDir(), "/TemporarySketch");
     const filename = "TemporarySketch.ino";
 
-    await tryAsync(async () => {
-      await makeSketch(sketchDir, filename);
+    error = null;
+    uploading = true;
+    try {
+      await makeSketch(code, sketchDir, filename);
       await compileSketch(board, sketchDir);
       await uploadSketch(board, sketchDir);
-    });
+    } catch (err) {
+      error = parseError(err);
+    }
+    uploading = false;
   }
-
-  const makeSketch = async (sketchDir: string, filename: string) => {
-    try {
-      await mkdir(sketchDir, { recursive: true });
-      const file = await create(await path.join(sketchDir, filename));
-      await file.write(new TextEncoder().encode(code));
-      await file.close();
-    } catch (err) {
-      throw Error("Could not create temporary sketch.", {
-        cause: err,
-      });
-    }
-  };
-
-  const compileSketch = async (board: Board, sketchDir: string) => {
-    const { stderr, code } = await arduinoCli([
-      "compile",
-      "-b",
-      board.matching_boards[0].fqbn,
-      sketchDir,
-      "--export-binaries",
-    ]);
-    if (code !== 0) {
-      throw Error("Could not compile your code.", { cause: stderr });
-    }
-  };
-
-  const uploadSketch = async (board: Board, sketchDir: string) => {
-    const { stderr, code } = await arduinoCli([
-      "upload",
-      sketchDir,
-      "-p",
-      board.port.address,
-    ]);
-    if (code !== 0) {
-      throw Error("Could not upload to port address.", { cause: stderr });
-    }
-  };
-
-  const getBoards = async () => {
-    const { stdout, stderr, code } = await arduinoCli([
-      "board",
-      "list",
-      "--json",
-    ]);
-    if (code !== 0) throw boardListError(stderr);
-    return getMatchigBoards(stdout);
-  };
-
-  const boardListError = (err: unknown) =>
-    Error(
-      `Could not get the lists of compatible boards. 
-        Did you install arduino-cli?\n
-        https://arduino.github.io/arduino-cli/0.22/installation/`,
-      { cause: err }
-    );
-
-  const getMatchigBoards = (stdout: string) => {
-    return getDetectedBoards(stdout).filter((port) =>
-      port.hasOwnProperty("matching_boards")
-    ) as BoardList;
-  };
-
-  const getDetectedBoards = (stdout: string) => {
-    const output = JSON.parse(stdout);
-    if (
-      output.hasOwnProperty("detected_ports") &&
-      Array.isArray(output.detected_ports)
-    ) {
-      return output.detected_ports as DetectedPorts;
-    }
-    throw Error(
-      'Could not get property "detected_ports" from arduino-cli board list JSON output.'
-    );
-  };
-
-  const arduinoCli = async (args: string[]) => {
-    try {
-      const command = Command.sidecar("binaries/arduino-cli", args);
-      return await command.execute();
-    } catch (err) {
-      throw Error("Command for the arduino-cli binary could not be executed.", {
-        cause: err,
-      });
-    }
-  };
 </script>
 
 <main class="container">
-  <Logo loading={appState.loading} />
+  <Logo {loading} />
   <form onsubmit={upload}>
     <label for="board-index">
       Select your hardware:
@@ -147,14 +75,14 @@
     ></textarea>
     <button
       type="submit"
-      disabled={boardList.length === 0 || appState.loading}
-      class={{ loading: appState.loading }}
+      disabled={boardList.length === 0 || uploading}
+      class={{ loading: uploading }}
     >
-      {appState.loading ? "Uploading..." : "Upload"}
+      Upload
     </button>
-    <code class="error">{appState.error?.message}</code>
-    {#if import.meta.env.DEV && appState.error}
-      <code class="error">{appState.error?.cause}</code>
+    <code class="error">{error?.message}</code>
+    {#if import.meta.env.DEV && error}
+      <code class="error">{error?.cause}</code>
     {/if}
   </form>
 </main>
@@ -236,9 +164,10 @@
     background-color: #e8e8e8;
   }
   button[disabled] {
-    color: #3f3f3f;
+    color: #6e6e6e;
   }
-  button.loading {
+  button[disabled].loading {
+    color: #0f0f0f;
     background: repeating-linear-gradient(
       to right,
       white,
