@@ -4,39 +4,10 @@
   "description": "Capability for the main window",
   "windows": ["*"],
   "permissions": [
+    "core:default",
     "fs:default",
-    "fs:allow-app-write",
-    "fs:allow-app-write-recursive",
-    "fs:allow-appcache-write",
-    "fs:allow-appcache-write-recursive",
-    "fs:allow-appconfig-write",
-    "fs:allow-appconfig-write-recursive",
-    "fs:allow-appdata-write",
-    "fs:allow-appdata-write-recursive",
-    "fs:allow-applocaldata-write",
-    "fs:allow-applocaldata-write-recursive",
-    "fs:allow-cache-write",
-    "fs:allow-cache-write-recursive",
-    "fs:allow-config-write",
-    "fs:allow-config-write-recursive",
-    "fs:allow-create",
-    "fs:allow-data-write",
-    "fs:allow-data-write-recursive",
-    "fs:allow-exe-write",
-    "fs:allow-exe-write-recursive",
-    "fs:allow-home-write",
-    "fs:allow-home-write-recursive",
-    "fs:allow-public-write",
-    "fs:allow-public-write-recursive",
-    "fs:allow-runtime-write",
-    "fs:allow-runtime-write-recursive",
     "fs:allow-temp-write",
     "fs:allow-temp-write-recursive",
-    "fs:write-all",
-    "fs:write-files",
-    "core:app:default",
-    "core:resources:default",
-    "core:default",
     {
       "identifier": "shell:allow-execute",
       "allow": [
@@ -46,8 +17,6 @@
           "sidecar": true
         }
       ]
-    },
-    "shell:allow-open",
-    "shell:default"
+    }
   ]
 }
